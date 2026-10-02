@@ -1,6 +1,8 @@
 import logging
 import warnings
 
+import scipy.optimize._shgo as shgo_module
+
 import numpy as np
 import time
 from multiprocessing import Pool
@@ -1226,3 +1228,44 @@ def test_gh16971():
 
     assert s.minimizer_kwargs['method'].lower() == 'cobyla'
     assert s.minimizer_kwargs['options']['catol'] == 0.05
+
+
+@pytest.mark.parametrize('global_options', [None, {}, {'maxiter': 2}])
+@pytest.mark.parametrize('local_maxiter', [1, 10])
+def test_explicit_local_options(global_options, local_maxiter, monkeypatch):
+    calls = []
+    callbacks = []
+    real_minimize = shgo_module.minimize
+    def observe(*args, **kwargs):
+        options = kwargs['options'].copy()
+        result = real_minimize(*args, **kwargs)
+        calls.append((options, result.nit))
+        return result
+    monkeypatch.setattr(shgo_module, 'minimize', observe)
+    shgo(lambda x: rosen(x - np.array([0.13, 0.17])),
+         [(-2, 2), (-2, 2)], n=16,
+         callback=lambda x: callbacks.append(x.copy()),
+         minimizer_kwargs={'method': 'SLSQP',
+                           'options': {'maxiter': local_maxiter}},
+         options=global_options)
+    assert calls
+    for options, nit in calls:
+        assert options['maxiter'] == local_maxiter
+        assert nit <= local_maxiter
+    assert len(callbacks) <= len(calls) * local_maxiter
+
+@pytest.mark.parametrize('global_options', [None, {}, {'ftol': 0.1}])
+def test_existing_ftol_precedence(global_options, monkeypatch):
+    calls = []
+    real_minimize = shgo_module.minimize
+    def observe(*args, **kwargs):
+        calls.append(kwargs['options'].copy())
+        return real_minimize(*args, **kwargs)
+    monkeypatch.setattr(shgo_module, 'minimize', observe)
+    shgo(lambda x: rosen(x - np.array([0.13, 0.17])),
+         [(-2, 2), (-2, 2)], n=16,
+         minimizer_kwargs={'method': 'SLSQP', 'options': {'ftol': 1e-12}},
+         options=global_options)
+    assert calls
+    expected = 0.1 if global_options else 1e-12
+    assert all(call['ftol'] == expected for call in calls)

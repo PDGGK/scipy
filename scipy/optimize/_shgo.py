@@ -604,6 +604,32 @@ class SHGO:
         ):
             self.minimizer_kwargs['constraints'] = self.min_cons
 
+        # Remove unknown arguments in self.minimizer_kwargs
+        # Start with arguments all the solvers have in common
+        self.min_solver_args = ['fun', 'x0', 'args',
+                                'callback', 'options', 'method']
+        # then add the ones unique to specific solvers
+        solver_args = {
+            '_custom': ['jac', 'hess', 'hessp', 'bounds', 'constraints'],
+            'nelder-mead': [],
+            'powell': [],
+            'cg': ['jac'],
+            'bfgs': ['jac'],
+            'newton-cg': ['jac', 'hess', 'hessp'],
+            'l-bfgs-b': ['jac', 'bounds'],
+            'tnc': ['jac', 'bounds'],
+            'cobyla': ['constraints', 'catol'],
+            'cobyqa': ['bounds', 'constraints', 'feasibility_tol'],
+            'slsqp': ['jac', 'bounds', 'constraints'],
+            'dogleg': ['jac', 'hess'],
+            'trust-ncg': ['jac', 'hess', 'hessp'],
+            'trust-krylov': ['jac', 'hess', 'hessp'],
+            'trust-exact': ['jac', 'hess'],
+            'trust-constr': ['jac', 'hess', 'hessp', 'constraints'],
+        }
+        method = self.minimizer_kwargs['method']
+        self.min_solver_args += solver_args[method.lower()]
+
         # Process options dict
         if options is not None:
             self.init_options(options)
@@ -643,32 +669,6 @@ class SHGO:
         self.minimizer_kwargs.pop("args", None)
         self.minimizer_kwargs["options"].pop("args", None)
 
-        # Remove unknown arguments in self.minimizer_kwargs
-        # Start with arguments all the solvers have in common
-        self.min_solver_args = ['fun', 'x0', 'args',
-                                'callback', 'options', 'method']
-        # then add the ones unique to specific solvers
-        solver_args = {
-            '_custom': ['jac', 'hess', 'hessp', 'bounds', 'constraints'],
-            'nelder-mead': [],
-            'powell': [],
-            'cg': ['jac'],
-            'bfgs': ['jac'],
-            'newton-cg': ['jac', 'hess', 'hessp'],
-            'l-bfgs-b': ['jac', 'bounds'],
-            'tnc': ['jac', 'bounds'],
-            'cobyla': ['constraints', 'catol'],
-            'cobyqa': ['bounds', 'constraints', 'feasibility_tol'],
-            'slsqp': ['jac', 'bounds', 'constraints'],
-            'dogleg': ['jac', 'hess'],
-            'trust-ncg': ['jac', 'hess', 'hessp'],
-            'trust-krylov': ['jac', 'hess', 'hessp'],
-            'trust-exact': ['jac', 'hess'],
-            'trust-constr': ['jac', 'hess', 'hessp', 'constraints'],
-        }
-        method = self.minimizer_kwargs['method']
-        self.min_solver_args += solver_args[method.lower()]
-
         # Only retain the known arguments
         def _restrict_to_keys(dictionary, goodkeys):
             """Remove keys from dictionary if not in goodkeys - inplace"""
@@ -677,8 +677,6 @@ class SHGO:
                 dictionary.pop(key, None)
 
         _restrict_to_keys(self.minimizer_kwargs, self.min_solver_args)
-        _restrict_to_keys(self.minimizer_kwargs['options'],
-                          self.min_solver_args + ['ftol'])
 
         # Algorithm controls
         # Global controls
@@ -792,7 +790,10 @@ class SHGO:
         """
         # Update 'options' dict passed to optimize.minimize
         # Do this first so we don't mutate `options` below.
-        self.minimizer_kwargs['options'].update(options)
+        self.minimizer_kwargs['options'].update(
+            {key: value for key, value in options.items()
+             if key in self.min_solver_args + ['ftol']}
+        )
 
         # Ensure that 'jac', 'hess', and 'hessp' are passed directly to
         # `minimize` as keywords, not as part of its 'options' dictionary.
